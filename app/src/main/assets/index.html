@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Absensi TIGA CAHAYA</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-4">
+  <div class="max-w-md mx-auto space-y-4">
+    
+    <div class="bg-blue-900 p-5 rounded-2xl text-center">
+      <h1 class="font-bold text-lg">TIGA CAHAYA uPVC</h1>
+    </div>
+
+    <!-- Pilihan -->
+    <select id="empSelect" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl text-xs"></select>
+    <input type="password" id="empPin" maxlength="4" placeholder="PIN 4 Digit" class="w-full bg-slate-800 border border-slate-700 p-3 rounded-xl text-center font-mono">
+
+    <!-- Area Kamera -->
+    <div class="space-y-2">
+        <div class="bg-black aspect-video rounded-xl overflow-hidden border border-slate-700">
+            <video id="webcam" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+            <canvas id="canvas" class="hidden w-full h-full"></canvas>
+            <div id="placeholder" class="flex items-center justify-center h-full text-slate-500 text-xs">Kamera Mati</div>
+        </div>
+        
+        <button onclick="startCam()" class="w-full py-2 bg-blue-600 rounded-lg text-xs font-bold">1. Buka Kamera</button>
+        <button onclick="capturePhoto()" class="w-full py-2 bg-green-600 rounded-lg text-xs font-bold">2. 📸 Ambil Foto Selfie</button>
+    </div>
+
+    <button onclick="getGPS()" class="w-full py-2 bg-amber-600 rounded-lg text-xs font-bold">3. 📍 Ambil Lokasi GPS</button>
+    
+    <div class="grid grid-cols-2 gap-2 pt-4">
+        <button onclick="submitAbsen('masuk')" class="bg-indigo-600 py-3 rounded-xl text-xs font-bold">CHECK-IN</button>
+        <button onclick="submitAbsen('pulang')" class="bg-rose-600 py-3 rounded-xl text-xs font-bold">CHECK-OUT</button>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "https://keyvalue.impartus.com/13904tigacahaya_";
+    let employees = [], attendance = {}, gps = null, capturedImage = null;
+
+    async function loadData() {
+        const resEmp = await fetch(API_URL + "EMP");
+        if(resEmp.ok) employees = await resEmp.json();
+        const select = document.getElementById('empSelect');
+        select.innerHTML = employees.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+    }
+
+    async function startCam() {
+        const vid = document.getElementById('webcam');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        vid.srcObject = stream;
+        vid.classList.remove('hidden');
+        document.getElementById('placeholder').classList.add('hidden');
+    }
+
+    function capturePhoto() {
+        const vid = document.getElementById('webcam');
+        const cvs = document.getElementById('canvas');
+        const ctx = cvs.getContext('2d');
+        cvs.width = 320; cvs.height = 240;
+        ctx.drawImage(vid, 0, 0, 320, 240);
+        capturedImage = cvs.toDataURL('image/jpeg', 0.5);
+        alert("Foto berhasil diambil! Sekarang silakan klik tombol Check-In atau Check-Out.");
+    }
+
+    function getGPS() {
+        navigator.geolocation.getCurrentPosition(p => {
+            gps = { lat: p.coords.latitude, lon: p.coords.longitude };
+            alert("Lokasi berhasil didapatkan!");
+        }, () => alert("Gagal ambil GPS, pastikan Lokasi aktif!"), { enableHighAccuracy: true });
+    }
+
+    async function submitAbsen(type) {
+        const empId = parseInt(document.getElementById('empSelect').value);
+        const pin = document.getElementById('empPin').value;
+        const emp = employees.find(e => e.id === empId);
+
+        if(!emp || emp.pin !== pin) return alert('PIN Salah!');
+        if(!capturedImage) return alert('Foto belum diambil!');
+        if(!gps) return alert('GPS belum diambil!');
+
+        const today = new Date().toISOString().split('T')[0];
+        const resAtt = await fetch(API_URL + "ATT");
+        attendance = resAtt.ok ? await resAtt.json() : {};
+
+        let rec = attendance[`${today}_${empId}`] || { empId, name: emp.name, date: today };
+        rec.inTime = type === 'masuk' ? new Date().toTimeString().substring(0,5) : rec.inTime;
+        rec.outTime = type === 'pulang' ? new Date().toTimeString().substring(0,5) : rec.outTime;
+        rec.photo = capturedImage;
+        rec.lat = gps.lat; rec.lon = gps.lon;
+
+        attendance[`${today}_${empId}`] = rec;
+        await fetch(API_URL + "ATT", { method: "POST", body: JSON.stringify(attendance) });
+        alert("Absensi Berhasil!");
+    }
+    window.onload = loadData;
+  </script>
+</body>
+</html>
